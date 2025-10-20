@@ -1,8 +1,6 @@
-/* ========= Motion preference + smooth scroll ========= */
 const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 if (!prefersReduced) document.documentElement.style.scrollBehavior = 'smooth';
 
-/* ========= Tabs: robust init + ARIA + deep linking ========= */
 (() => {
   const tablist = document.querySelector('.tabs[role="tablist"]');
   if (!tablist) return;
@@ -14,7 +12,6 @@ if (!prefersReduced) document.documentElement.style.scrollBehavior = 'smooth';
   const panelById = new Map(panels.map(p => [p.id, p]));
 
   function ensureValidState() {
-    // Pick the currently marked tab or default to the first.
     let selected = tabs.find(t => t.getAttribute('aria-selected') === 'true') || tabs[0];
     tabs.forEach(t => {
       const on = t === selected;
@@ -48,21 +45,18 @@ if (!prefersReduced) document.documentElement.style.scrollBehavior = 'smooth';
 
     if (focus) tab.focus();
 
-    // Sync the hash so links are shareable (#features, etc.)
     if (updateHash) {
-      const section = tab.id.replace('tab-', ''); // demo, features, founders, faq
+      const section = tab.id.replace('tab-', ''); 
       if (section) history.replaceState(null, '', `#${section}`);
     }
   }
 
-  // Click to activate
   tablist.addEventListener('click', (e) => {
     const btn = e.target.closest('.tab[role="tab"]');
     if (!btn) return;
     activateTab(btn, { focus: true, updateHash: true });
   });
 
-  // Keyboard support
   tablist.addEventListener('keydown', (e) => {
     const i = tabs.indexOf(document.activeElement);
     if (i === -1) return;
@@ -85,7 +79,6 @@ if (!prefersReduced) document.documentElement.style.scrollBehavior = 'smooth';
     tabs[nextIndex].focus();
   });
 
-  // Deep link support (#features, #founders, #faq, #demo)
   function openFromHash() {
     const key = (location.hash || '#demo').slice(1).toLowerCase();
     const target = document.getElementById(`tab-${key}`);
@@ -96,22 +89,18 @@ if (!prefersReduced) document.documentElement.style.scrollBehavior = 'smooth';
     }
   }
 
-  // Initialize state and then apply hash (if any)
   ensureValidState();
   openFromHash();
   window.addEventListener('hashchange', openFromHash);
 })();
 
-/* ========= Anchor smooth scroll (non-tab anchors) ========= */
 document.addEventListener('click', (e) => {
   const a = e.target.closest('a[href^="#"]');
   if (!a) return;
 
-  // Ignore tab buttons (we handle those above) and empty hashes
   const id = a.getAttribute('href').slice(1);
   if (!id) return;
 
-  // If this anchor points to a tab section, let the tab handler deal with it via hashchange
   const maybeTab = document.getElementById(`tab-${id}`);
   if (maybeTab) return;
 
@@ -122,11 +111,9 @@ document.addEventListener('click', (e) => {
   el.scrollIntoView({ behavior: prefersReduced ? 'auto' : 'smooth', block: 'start' });
 });
 
-/* ========= Dynamic year ========= */
 const yearEl = document.getElementById('year');
 if (yearEl) yearEl.textContent = new Date().getFullYear();
 
-/* ========= Waitlist Form (Formspree) ========= */
 const form = document.getElementById('betaForm');
 const successEl = document.getElementById('formSuccess');
 
@@ -175,7 +162,6 @@ async function submitForm(e){
   if (submitBtn) submitBtn.disabled = true;
   form.setAttribute('aria-busy','true');
 
-  // Honeypot: quietly drop if filled
   const gotcha = form.elements['_gotcha'];
   if (gotcha && gotcha.value.trim() !== '') {
     if (successEl) successEl.classList.remove('hide');
@@ -205,9 +191,143 @@ async function submitForm(e){
 
 if (form) form.addEventListener('submit', submitForm);
 
-/* ========= Privacy link placeholder ========= */
 const privacy = document.getElementById('privacy');
 if (privacy) privacy.addEventListener('click', (e) => {
   e.preventDefault();
   alert('Privacy Notice: We only use your info to reach you about Hooked? updates. No third-party sharing.');
 });
+
+/* ========= Fast PDF slide deck (PDF.js) ========= */
+document.addEventListener('DOMContentLoaded', () => {
+  const decks = document.querySelectorAll('.pdf-deck.fast');
+  if (!decks.length || !window.pdfjsLib) return;
+
+  decks.forEach(async (deck) => {
+    const src = deck.getAttribute('data-src');
+    const canvas = deck.querySelector('.pdf-canvas');
+    const ctx = canvas.getContext('2d', { alpha: false });
+    const prevBtn = deck.querySelector('.prev');
+    const nextBtn = deck.querySelector('.next');
+    const status  = deck.querySelector('.deck-status');
+    const loading = deck.querySelector('.deck-loading');
+
+    if (!src || !canvas) return;
+
+    // State
+    let pdf = null;
+    let page = Math.max(1, parseInt(deck.getAttribute('data-initial') || '1', 10));
+    let total = 1;
+    let rendering = false;
+    const cache = new Map(); // page -> ImageBitmap
+
+    const showLoading = (on) => loading && loading.classList.toggle('show', !!on);
+
+    // Load once
+    try {
+      showLoading(true);
+      pdf = await pdfjsLib.getDocument(src).promise;
+      total = pdf.numPages;
+      page = Math.min(page, total);
+    } catch (e) {
+      showLoading(false);
+      status.textContent = 'Error loading PDF';
+      console.error(e);
+      return;
+    }
+
+    function updateControls() {
+      status.textContent = `${page} / ${total}`;
+      prevBtn.hidden = (page === 1);
+      nextBtn.hidden = (page === total);
+    }
+
+    async function renderPage(p) {
+      if (rendering) return;
+      rendering = true;
+      showLoading(true);
+
+      const wrap = canvas.parentElement; 
+      const wrapWidth = wrap.clientWidth;
+      const wrapHeight = wrap.clientHeight;
+
+      const pdfPage = await pdf.getPage(p);
+      const unscaledViewport = pdfPage.getViewport({ scale: 1 });
+      const scale = Math.min(wrapWidth / unscaledViewport.width, wrapHeight / unscaledViewport.height);
+
+      const viewport = pdfPage.getViewport({ scale });
+      canvas.width = Math.floor(viewport.width);
+      canvas.height = Math.floor(viewport.height);
+
+      let bmp = cache.get(`${p}@${canvas.width}x${canvas.height}`);
+      if (!bmp) {
+        const tmp = document.createElement('canvas');
+        tmp.width = canvas.width;
+        tmp.height = canvas.height;
+        const tmpCtx = tmp.getContext('2d', { alpha:false });
+
+        await pdfPage.render({ canvasContext: tmpCtx, viewport }).promise;
+        bmp = await createImageBitmap(tmp);
+        cache.clear(); 
+        cache.set(`${p}@${canvas.width}x${canvas.height}`, bmp);
+      }
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(bmp, 0, 0);
+      rendering = false;
+      showLoading(false);
+    }
+
+    async function preRenderNeighbor(dir) {
+      const target = page + dir;
+      if (target < 1 || target > total) return;
+      const wrap = canvas.parentElement;
+      const wrapWidth = wrap.clientWidth;
+      const wrapHeight = wrap.clientHeight;
+
+      const pdfPage = await pdf.getPage(target);
+      const unscaledViewport = pdfPage.getViewport({ scale: 1 });
+      const scale = Math.min(wrapWidth / unscaledViewport.width, wrapHeight / unscaledViewport.height);
+      const viewport = pdfPage.getViewport({ scale });
+
+      const key = `${target}@${Math.floor(viewport.width)}x${Math.floor(viewport.height)}`;
+      if (cache.has(key)) return;
+
+      const tmp = document.createElement('canvas');
+      tmp.width = Math.floor(viewport.width);
+      tmp.height = Math.floor(viewport.height);
+      const tmpCtx = tmp.getContext('2d', { alpha:false });
+      await pdfPage.render({ canvasContext: tmpCtx, viewport }).promise;
+      const bmp = await createImageBitmap(tmp);
+      cache.set(key, bmp);
+    }
+
+    async function go(delta) {
+      const next = page + delta;
+      if (next < 1 || next > total) return;
+      page = next;
+      updateControls();
+      await renderPage(page);
+      preRenderNeighbor(delta); 
+    }
+
+    prevBtn.addEventListener('click', () => go(-1));
+    nextBtn.addEventListener('click', () => go(1));
+    deck.tabIndex = 0;
+    deck.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowLeft') go(-1);
+      if (e.key === 'ArrowRight') go(1);
+    });
+
+    updateControls();
+    await renderPage(page);
+    preRenderNeighbor(1);
+
+    let resizeTimer = null;
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => renderPage(page), 120);
+    });
+  });
+});
+
+
