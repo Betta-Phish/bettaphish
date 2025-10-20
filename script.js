@@ -330,4 +330,77 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
+/* mobile */
+
+document.addEventListener('DOMContentLoaded', () => {
+  const tablist = document.querySelector('.tabs[role="tablist"]');
+  const tabButtons = tablist ? Array.from(tablist.querySelectorAll('.tab[role="tab"]')) : [];
+
+  function getActiveTabIndex(){
+    return tabButtons.findIndex(t => t.getAttribute('aria-selected') === 'true');
+  }
+  function activateByIndex(idx){
+    const target = tabButtons[idx];
+    if (!target) return;
+    if (typeof activateTab === 'function') {
+      activateTab(target, { focus: false, updateHash: true });
+    } else {
+      target.click();
+    }
+    target.scrollIntoView({ inline: 'center', behavior: 'smooth', block: 'nearest' });
+  }
+
+  if (tablist && tabButtons.length){
+    let startX = 0, startY = 0, moved = false;
+    tablist.addEventListener('touchstart', (e) => {
+      const t = e.touches[0];
+      startX = t.clientX; startY = t.clientY; moved = false;
+    }, { passive:true });
+
+    tablist.addEventListener('touchmove', (e) => {
+      const t = e.touches[0];
+      const dx = t.clientX - startX;
+      const dy = Math.abs(t.clientY - startY);
+      if (Math.abs(dx) > 24 && dy < 18) moved = true; 
+    }, { passive:true });
+
+    tablist.addEventListener('touchend', (e) => {
+      if (!moved) return;
+      const endX = (e.changedTouches && e.changedTouches[0]?.clientX) || startX;
+      const dx = endX - startX;
+      const i = getActiveTabIndex();
+      if (dx < -24) activateByIndex(Math.min(i + 1, tabButtons.length - 1)); 
+      if (dx >  24) activateByIndex(Math.max(i - 1, 0));
+    });
+  }
+
+  document.querySelectorAll('.pdf-deck.fast').forEach(deck => {
+    const canvasWrap = deck.querySelector('.deck-canvas-wrap') || deck;
+    const prevBtn = deck.querySelector('.prev');
+    const nextBtn = deck.querySelector('.next');
+    if (!canvasWrap || (!prevBtn && !nextBtn)) return;
+
+    let sx = 0, sy = 0, swiped = false;
+    canvasWrap.addEventListener('touchstart', (e) => {
+      const t = e.touches[0];
+      sx = t.clientX; sy = t.clientY; swiped = false;
+    }, { passive:true });
+
+    canvasWrap.addEventListener('touchmove', (e) => {
+      const t = e.touches[0];
+      const dx = t.clientX - sx;
+      const dy = Math.abs(t.clientY - sy);
+      if (Math.abs(dx) > 24 && dy < 18) swiped = true;
+    }, { passive:true });
+
+    canvasWrap.addEventListener('touchend', (e) => {
+      if (!swiped) return;
+      const ex = (e.changedTouches && e.changedTouches[0]?.clientX) || sx;
+      const dx = ex - sx;
+      if (dx < -24 && !nextBtn.hidden) nextBtn.click(); // left swipe -> next
+      if (dx >  24 && !prevBtn.hidden) prevBtn.click(); // right swipe -> prev
+    });
+  });
+});
+
 
